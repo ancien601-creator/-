@@ -151,7 +151,7 @@ async def profile_cmd(message: types.Message):
         f"👤 <b>Твой игровой профиль:</b>\n\n"
         f"🎯 Твой ID: <code>{message.from_user.id}</code>\n"
         f"💰 Баланс: <b>{stars} ⭐️ Stars</b>\n\n"
-        f"⚙️ <i>Владелец казино:</i> @Vados4433",
+        f"⚙️ <i>Програмист казино:</i> @Vados4433",
         parse_mode="HTML"
     )
 
