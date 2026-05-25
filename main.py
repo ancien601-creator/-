@@ -477,5 +477,45 @@ async def open_case(message: types.Message):
 # ==========================================
 # ЯДРО МУЛЬТИБОТ-СИСТЕМЫ (БЕЗОПАСНЫЙ ПОЛИНГ)
 # ==========================================
+# ==========================================
+# ЯДРО МУЛЬТИБОТ-СИСТЕМЫ (БЕЗОПАСНЫЙ ПОЛИНГ)
+# ==========================================
 async def dynamic_bot_polling(token: str):
-    """Изолированный цикл получения обновлений для рефе
+    """Изолированный цикл получения обновлений для реферального бота"""
+    async with Bot(token=token) as child_bot:
+        offset = None
+        while True:
+            try:
+                updates = await child_bot.get_updates(offset=offset, timeout=15)
+                for update in updates:
+                    offset = update.update_id + 1
+                    # Безопасно скармливаем событие основному диспетчеру dp
+                    asyncio.create_task(dp.feed_update(bot=child_bot, update=update))
+            except Exception as e:
+                logging.error(f"Ошибка полинга дочернего бота ({token[:10]}...): {e}")
+                if "Unauthorized" in str(e) or "Not Found" in str(e):
+                    # Если токен забанен/удален, прекращаем цикл
+                    break
+                await asyncio.sleep(10)
+
+async def on_startup():
+    """Запуск всех дочерних ботов из БД при включении основного сервера"""
+    # ТИМЧАСОВО: видаляємо головний токен з реферальних, если он туда попал
+    cursor.execute('DELETE FROM child_bots WHERE token = ?', (BOT_TOKEN,))
+    conn.commit()
+    
+    cursor.execute('SELECT token FROM child_bots')
+    saved_bots = cursor.fetchall()
+    for (token,) in saved_bots:
+        asyncio.create_task(dynamic_bot_polling(token))
+    print(f"Успешно восстановлена автономная работа {len(saved_bots)} реферальных ботов!")
+
+async def main():
+    # Запускаем фоновые таски для реферальных ботов
+    await on_startup()
+    print("Исправленный ИМБОВЫЙ бот-казино запущен!")
+    # Стартуем полинг основного бота
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
