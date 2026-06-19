@@ -1,5 +1,6 @@
 import asyncio
 import aiosqlite
+import os
 
 DB_NAME = os.path.join("/app/data", "bot.db")
 
