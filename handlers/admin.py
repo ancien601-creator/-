@@ -233,16 +233,17 @@ async def slots_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
         "slot_price": data["slot_price"]
     })
     try:
-        if data.get("photo"):
-            msg = await bot.send_photo(chat_id=data["channel_id"], photo=data["photo"], caption=post_text, reply_markup=kb)
-        else:
-            msg = await bot.send_message(chat_id=data["channel_id"], text=post_text, reply_markup=kb)
-        await update_contest(contest_id, message_id=msg.message_id)
-        await state.clear()
-        await callback.message.edit_text("✅ Лотерея запущена!")
-    except Exception as e:
-        await callback.message.edit_text(f"❌ Ошибка: {e}")
-    await callback.answer()
+    if data.get("photo"):
+        msg = await bot.send_photo(chat_id=data["channel_id"], photo=data["photo"], caption=post_text, reply_markup=kb)
+    else:
+        msg = await bot.send_message(chat_id=data["channel_id"], text=post_text, reply_markup=kb)
+    await update_contest(contest_id, message_id=msg.message_id)
+    await state.clear()
+    await callback.message.edit_text("✅ Опубликовано!")
+except Exception as e:
+    error_text = f"❌ Ошибка: {e}"
+    print(error_text)
+    await callback.message.edit_text(error_text)
 
 # === ЛОТЕРЕЯ ПО СЛОТАМ ===
 @router.callback_query(F.data == "type_slots")
