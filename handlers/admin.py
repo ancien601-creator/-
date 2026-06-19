@@ -206,7 +206,10 @@ async def classic_sponsors(message: Message, state: FSMContext, bot: Bot):
 @router.callback_query(StateFilter(SlotsCreation.confirm), F.data == "publish")
 async def slots_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
     data = await state.get_data()
-    bot_username = (await bot.get_me()).username
+    me = await bot.get_me()
+    contest_id = await create_contest({...})
+    kb = slot_url_buttons(contest_id, data["slots_count"], {}, me.username)
+    # ... отправка поста
     contest_id = await create_contest({
         "type": "slots",
         "text": data.get("text", ""),
