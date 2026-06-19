@@ -1,36 +1,49 @@
 import json
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, PreCheckoutQuery, LabeledPrice
-from aiogram.filters import CommandObject, CommandStart
+from aiogram.filters import CommandStart, CommandObject
 from db import (
     get_contest, add_participant, get_participants_count,
     reserve_slot, get_slot_owner, get_occupied_slots, update_contest,
     add_user, get_random_participants
 )
-from keyboards import subscription_check, slot_url_buttons
+from keyboards import subscription_check, slot_url_buttons, main_menu
 from utils import check_subscriptions, update_post_message, generate_contest_post
 from datetime import datetime
 
 router = Router()
 
-@router.message(CommandStart(deep_link=True))
-async def deep_link_handler(message: Message, bot: Bot, command: CommandObject):
+# === Единый обработчик /start ===
+@router.message(CommandStart())
+async def start_handler(message: Message, bot: Bot, command: CommandObject):
+    """Обрабатывает и обычный /start, и deep link"""
+    user = message.from_user
+    await add_user(user.id, user.username)
+
     args = command.args
-    if not args:
-        return
-    if args.startswith("contest_"):
-        contest_id = int(args.split("_")[1])
-        await handle_classic_join(message, bot, contest_id)
-    elif args.startswith("slot_"):
-        _, contest_id_str, slot_str = args.split("_")
-        contest_id = int(contest_id_str)
-        slot_num = int(slot_str)
-        await handle_slot_click(message, bot, contest_id, slot_num)
+    if args:
+        if args.startswith("contest_"):
+            contest_id = int(args.split("_")[1])
+            await handle_classic_join(message, bot, contest_id)
+            return
+        elif args.startswith("slot_"):
+            _, contest_id_str, slot_str = args.split("_")
+            contest_id = int(contest_id_str)
+            slot_num = int(slot_str)
+            await handle_slot_click(message, bot, contest_id, slot_num)
+            return
+
+    # Обычный /start – покажем меню
+    from db import is_admin
+    admin = await is_admin(user.id)
+    await message.answer(
+        "👋 Добро пожаловать! Выберите действие:",
+        reply_markup=main_menu(admin)
+    )
 
 # === Классический розыгрыш ===
 async def handle_classic_join(message: Message, bot: Bot, contest_id: int):
     user = message.from_user
-    await add_user(user.id, user.username)
     contest = await get_contest(contest_id)
     if not contest or contest['status'] != 'active':
         await message.answer("Розыгрыш не найден или завершён.")
@@ -78,7 +91,6 @@ async def finish_classic_auto(bot: Bot, contest_id: int):
 # === Лотерея по слотам ===
 async def handle_slot_click(message: Message, bot: Bot, contest_id: int, slot_num: int):
     user = message.from_user
-    await add_user(user.id, user.username)
     contest = await get_contest(contest_id)
     if not contest or contest['status'] != 'active':
         await message.answer("Лотерея не активна.")
@@ -178,6 +190,7 @@ async def successful_payment(message: Message, bot: Bot):
         return
     await reserve_and_check(bot, contest, message.from_user.id, slot_num, message)
 
+# Кнопка проверки подписки
 @router.callback_query(F.data == "check_sub")
 async def check_sub_again(callback: CallbackQuery, bot: Bot):
     await callback.answer("Перезапустите бота командой /start для перепроверки.", show_alert=True)
