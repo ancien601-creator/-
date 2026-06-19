@@ -1,40 +1,63 @@
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties  # <-- Добавить этот импорт
+import sys
+from aiogram import Bot, Dispatcher, html
+from aiogram.client.default import DefaultBotProperties
+from aiogram.filters import CommandStart
+from aiogram.types import Message
+
+# Импорт твоих конфигов и базы данных
+# (Убедись, что переменные и пути совпадают с твоим проектом)
 from config import BOT_TOKEN
 from database import Database
-from handlers import get_handlers_router
+
+# ЕСЛИ ХЭНДЛЕРЫ В ОТДЕЛЬНОМ ФАЙЛЕ (например, handlers.py):
+# раскомментируй строку ниже и строку с include_router в функции main
+# from handlers import router as main_router
 
 async def main():
-    # Настройка логирования
+    # Настройка логирования в stdout, чтобы Railway корректно читал логи
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        stream=sys.stdout
     )
 
-    # Инициализация базы данных
-    await Database.init_db()
+    # 1. Инициализируем базу данных
+    try:
+        await Database.init_db()
+        logging.info("База данных успешно инициализирована.")
+    except Exception as e:
+        logging.error(f"Ошибка при запуске базы данных: {e}")
+        return
 
-    # Инициализация бота и диспетчера
+    # 2. Инициализируем бота с поддержкой HTML-тегов (для aiogram 3.7+)
     bot = Bot(
-    token=BOT_TOKEN, 
-    default=DefaultBotProperties(parse_mode="HTML")
-)
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode="HTML")
+    )
+    
     dp = Dispatcher()
 
-    # Подключение единого роутера хэндлеров
-    dp.include_router(get_handlers_router())
+    # 3. Регистрация хэндлеров
+    # Если используешь отдельный роутер для хэндлеров, подключи его здесь:
+    # dp.include_router(main_router)
 
-    logging.info("Бот успешно запущен и готов к работе.")
-    
-    try:
-        await dp.start_polling(bot)
-    finally:
-        await bot.session.close()
+    # Тестовый хэндлер прямо в main.py, чтобы проверить реакцию на /start
+    @dp.message(CommandStart())
+    async def command_start_handler(message: Message) -> None:
+        user_name = html.bold(message.from_user.full_name)
+        await message.answer(f"Привет, {user_name}! Бот успешно запущен и отвечает.")
+
+    # 4. Сброс незавершенных обновлений (чтобы бот не спамил старыми ответами при перезапуске)
+    await bot.delete_webhook(drop_pending_updates=True)
+
+    # 5. Запуск пуллинга
+    logging.info("Бот переходит в режим ожидания сообщений...")
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logging.info("Бот остановлен.")
+    except KeyboardInterrupt:
+        print("Бот принудительно остановлен пользователем.")
