@@ -64,10 +64,11 @@ async def handle_classic_join(message: Message, bot: Bot, contest_id: int):
 
     success = await add_participant(contest_id, user.id)
     if success:
-        await message.answer("✅ Вы участвуете в розыгрыше!")
+        total = await get_participants_count(contest_id)
+        await message.answer(f"✅ Вы успешно участвуете!\n👥 Всего участников: {total}")
+    
         if contest['end_condition'] == 'participants':
-            current = await get_participants_count(contest_id)
-            if current >= int(contest['end_value']):
+            if total >= int(contest['end_value']):
                 await finish_classic_auto(bot, contest_id)
     else:
         await message.answer("Вы уже участвуете.")
