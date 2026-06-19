@@ -2,7 +2,7 @@ import aiosqlite
 import json
 from typing import Optional
 
-DB_NAME = "bot.db"
+DB_NAME = os.path.join(os.getenv("DATA_DIR", "/app/data"), "bot.db")
 
 async def get_db():
     return await aiosqlite.connect(DB_NAME)
