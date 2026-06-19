@@ -45,8 +45,8 @@ def generate_contest_post(contest: dict) -> str:
     else:  # slots
         text += f"\n\n🎰 Слотов: {contest['slots_count']}"
         if contest['payment_required']:
-            price_rub = contest['slot_price'] / 100
-            text += f"\n💰 Стоимость слота: {price_rub:.2f} руб."
+            price = contest['slot_price']  # звезды
+            text += f"\n💰 Стоимость слота: {price} ⭐"
         else:
             text += "\n🆓 Участие бесплатное"
     return text
