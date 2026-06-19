@@ -12,19 +12,14 @@ def main_menu(is_admin: bool) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 def slot_url_buttons(contest_id: int, slots_count: int, occupied: dict[int, int], bot_username: str) -> InlineKeyboardMarkup:
-    """
-    occupied: {номер_слота: user_id} – занятые слоты.
-    Свободные слоты ведут на deep link: t.me/<bot_username>?start=slot_{contest_id}_{slot}
-    """
     builder = InlineKeyboardBuilder()
     for i in range(1, slots_count + 1):
         if i in occupied:
-            # Занятый слот – кнопка без перехода
             builder.button(text=f"❌ {i}", callback_data="slot_occupied")
         else:
             url = f"https://t.me/{bot_username}?start=slot_{contest_id}_{i}"
             builder.button(text=str(i), url=url)
-    builder.adjust(5)  # по 5 в ряд
+    builder.adjust(5)
     return builder.as_markup()
 
 
