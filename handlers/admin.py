@@ -359,7 +359,8 @@ async def slots_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
         "sponsor_channels": json.dumps(data["sponsors"]),
         "title": (data.get("text") or "Лотерея")[:30]
     })
-    kb = slot_buttons(contest_id, data["slots_count"], {})
+    me = await bot.get_me()
+    kb = slot_url_buttons(contest_id, data["slots_count"], {}, me.username)
     post_text = generate_contest_post({
         "type": "slots",
         "text": data.get("text", ""),
