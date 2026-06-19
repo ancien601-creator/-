@@ -1,12 +1,9 @@
 import aiosqlite
 import json
-from typing import Optional
 import os
+from typing import Optional
 
 DB_NAME = os.path.join(os.getenv("DATA_DIR", "/app/data"), "bot.db")
-
-async def get_db():
-    return await aiosqlite.connect(DB_NAME)
 
 # --- Пользователи ---
 async def add_user(user_id: int, username: Optional[str]):
@@ -18,7 +15,7 @@ async def add_user(user_id: int, username: Optional[str]):
         await db.commit()
 
 async def is_admin(user_id: int) -> bool:
-    """Пользователь является администратором, если у него есть хотя бы один канал в admin_channels."""
+    """Администратор – если есть хотя бы один канал в admin_channels."""
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute(
             "SELECT COUNT(*) FROM admin_channels WHERE user_id = ?",
@@ -118,7 +115,6 @@ async def get_random_participants(contest_id: int, limit: int) -> list[int]:
 
 # --- Слоты ---
 async def reserve_slot(contest_id: int, slot_number: int, user_id: int) -> bool:
-    """Атомарное бронирование слота. Возвращает True при успехе."""
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("BEGIN IMMEDIATE")
         try:
@@ -149,7 +145,6 @@ async def get_slot_owner(contest_id: int, slot_number: int) -> Optional[int]:
             return row[0] if row else None
 
 async def get_occupied_slots(contest_id: int) -> dict[int, int]:
-    """Возвращает {номер_слота: user_id} для всех занятых слотов."""
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute(
             "SELECT slot_number, user_id FROM slots WHERE contest_id = ?",
