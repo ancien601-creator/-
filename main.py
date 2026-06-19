@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties  # <-- Добавить этот импорт
 from config import BOT_TOKEN
 from database import Database
 from handlers import get_handlers_router
