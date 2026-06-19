@@ -22,7 +22,6 @@ def slot_url_buttons(contest_id: int, slots_count: int, occupied: dict[int, int]
     builder.adjust(5)
     return builder.as_markup()
 
-
 def project_type_choice() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🎁 Классический розыгрыш", callback_data="type_classic")
