@@ -15,7 +15,7 @@ from keyboards import (
     main_menu, project_type_choice, end_condition_choice,
     button_text_choice, payment_choice, skip_button,
     confirm_keyboard, my_projects_keyboard, project_actions,
-    slot_buttons
+    slot_buttons, slot_url_buttons
 )
 from states import ClassicCreation, SlotsCreation
 from utils import update_post_message, generate_contest_post
