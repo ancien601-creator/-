@@ -124,7 +124,10 @@ async def reserve_and_check(bot: Bot, contest: dict, user_id: int, slot_num: int
         return
     # Обновить кнопки в канале
     occupied = await get_occupied_slots(contest['id'])
-    kb = slot_buttons(contest['id'], contest['slots_count'], occupied)
+   # было: kb = slot_buttons(contest['id'], contest['slots_count'], occupied)
+# стало:
+    me = await bot.get_me()
+    kb = slot_url_buttons(contest['id'], contest['slots_count'], occupied, me.username)
     await update_post_message(bot, contest, reply_markup=kb)
 
     # Проверка победы
