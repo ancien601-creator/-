@@ -82,6 +82,20 @@ async def add_channel_by_forward(message: Message, bot: Bot):
     except Exception as e:
         await message.answer(f"❌ Ошибка: {e}")
 
+
+@router.message(Command("test_channel"))
+async def test_channel(message: Message, bot: Bot):
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("Укажите ID канала, например: /test_channel -1001234567890")
+        return
+    try:
+        chat_id = int(args[1])
+        test_msg = await bot.send_message(chat_id, "✅ Тестовое сообщение. Бот может публиковать.")
+        await message.answer(f"Сообщение отправлено в канал {chat_id}, message_id={test_msg.message_id}")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}")
+
 # --- Создание проекта ---
 @router.callback_query(F.data == "create_project")
 async def create_project(callback: CallbackQuery, state: FSMContext):
