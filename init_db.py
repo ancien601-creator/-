@@ -1,7 +1,7 @@
 import asyncio
 import aiosqlite
 
-DB_NAME = "bot.db"
+DB_NAME = os.path.join("/app/data", "bot.db")
 
 async def create_tables():
     async with aiosqlite.connect(DB_NAME) as db:
