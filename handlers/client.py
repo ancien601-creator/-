@@ -99,22 +99,22 @@ async def handle_slot_click(message: Message, bot: Bot, contest_id: int, slot_nu
         return
 
     if contest['payment_required']:
-        price = contest['slot_price']  # копейки
-        await bot.send_invoice(
-            chat_id=user.id,
-            title=f"Слот №{slot_num}",
-            description=f"Бронирование слота №{slot_num} в лотерее",
-            payload=f"slot_{contest_id}_{slot_num}",
-            provider_token="",  # тестовый режим (или укажите токен)
-            currency="RUB",
-            prices=[LabeledPrice(label="Слот", amount=price)],
-            start_parameter=f"slot_{contest_id}_{slot_num}",
-            need_name=False,
-            need_phone_number=False,
-            is_flexible=False
-        )
-    else:
-        await reserve_and_check(bot, contest, user.id, slot_num, message)
+    price_stars = contest['slot_price']  # уже в звездах
+    await bot.send_invoice(
+        chat_id=user.id,
+        title=f"Слот №{slot_num}",
+        description=f"Бронирование слота №{slot_num} в лотерее",
+        payload=f"slot_{contest_id}_{slot_num}",
+        provider_token="",           # для XTR оставляем пустым
+        currency="XTR",              # Telegram Stars
+        prices=[LabeledPrice(label="Слот", amount=price_stars)],
+        start_parameter=f"slot_{contest_id}_{slot_num}",
+        need_name=False,
+        need_phone_number=False,
+        is_flexible=False
+    )
+else:
+    await reserve_and_check(bot, contest, user.id, slot_num, message)
 
 async def reserve_and_check(bot: Bot, contest: dict, user_id: int, slot_num: int, message: Message = None):
     success = await reserve_slot(contest['id'], slot_num, user_id)
