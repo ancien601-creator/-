@@ -15,7 +15,7 @@ from keyboards import (
     main_menu, project_type_choice, end_condition_choice,
     button_text_choice, payment_choice, skip_button,
     confirm_keyboard, my_projects_keyboard, project_actions,
-    slot_buttons, slot_url_buttons
+    slot_url_buttons
 )
 from states import ClassicCreation, SlotsCreation
 from utils import update_post_message, generate_contest_post
@@ -24,7 +24,7 @@ import random
 
 router = Router()
 
-# --- Вспомогательная функция проверки админа ---
+# --- Вспомогательная функция ---
 async def require_admin(user_id: int) -> bool:
     return await is_admin(user_id)
 
@@ -92,8 +92,7 @@ async def create_project(callback: CallbackQuery, state: FSMContext):
 # === КЛАССИЧЕСКИЙ РОЗЫГРЫШ ===
 @router.callback_query(F.data == "type_classic")
 async def classic_start(callback: CallbackQuery, state: FSMContext):
-    if not await require_admin(callback.from_user.id):
-        return
+    if not await require_admin(callback.from_user.id): return
     await state.set_state(ClassicCreation.channel)
     channels = await get_admin_channels(callback.from_user.id)
     if not channels:
@@ -228,18 +227,9 @@ async def classic_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
     })
     try:
         if data.get("photo"):
-            msg = await bot.send_photo(
-                chat_id=data["channel_id"],
-                photo=data["photo"],
-                caption=post_text,
-                reply_markup=kb
-            )
+            msg = await bot.send_photo(chat_id=data["channel_id"], photo=data["photo"], caption=post_text, reply_markup=kb)
         else:
-            msg = await bot.send_message(
-                chat_id=data["channel_id"],
-                text=post_text,
-                reply_markup=kb
-            )
+            msg = await bot.send_message(chat_id=data["channel_id"], text=post_text, reply_markup=kb)
         await update_contest(contest_id, message_id=msg.message_id)
         await state.clear()
         await callback.message.edit_text("✅ Опубликовано!")
@@ -252,8 +242,7 @@ async def classic_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
 # === ЛОТЕРЕЯ ПО СЛОТАМ ===
 @router.callback_query(F.data == "type_slots")
 async def slots_start(callback: CallbackQuery, state: FSMContext):
-    if not await require_admin(callback.from_user.id):
-        return
+    if not await require_admin(callback.from_user.id): return
     await state.set_state(SlotsCreation.channel)
     channels = await get_admin_channels(callback.from_user.id)
     if not channels:
@@ -379,23 +368,14 @@ async def slots_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
     })
     try:
         if data.get("photo"):
-            msg = await bot.send_photo(
-                chat_id=data["channel_id"],
-                photo=data["photo"],
-                caption=post_text,
-                reply_markup=kb
-            )
+            msg = await bot.send_photo(chat_id=data["channel_id"], photo=data["photo"], caption=post_text, reply_markup=kb)
         else:
-            msg = await bot.send_message(
-                chat_id=data["channel_id"],
-                text=post_text,
-                reply_markup=kb
-            )
+            msg = await bot.send_message(chat_id=data["channel_id"], text=post_text, reply_markup=kb)
         await update_contest(contest_id, message_id=msg.message_id)
         await state.clear()
         await callback.message.edit_text("✅ Лотерея запущена!")
     except Exception as e:
-        error_text = f"❌ Ошибка при публикации: {e}"
+        error_text = f"❌ Ошибка: {e}"
         print(error_text)
         await callback.message.edit_text(error_text)
     await callback.answer()
@@ -445,7 +425,7 @@ async def finish_contest(callback: CallbackQuery, bot: Bot):
         await update_post_message(bot, contest, new_text=new_text)
         await update_contest(contest_id, status='finished', finished_at=datetime.now())
         await callback.message.edit_text("✅ Итоги подведены!")
-    else:
+    else:  # slots
         await update_contest(contest_id, status='finished', finished_at=datetime.now())
         await update_post_message(bot, contest, reply_markup=None)
         await callback.message.edit_text("✅ Лотерея завершена.")
