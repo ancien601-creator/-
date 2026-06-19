@@ -46,12 +46,10 @@ async def add_channel_by_username(message: Message, bot: Bot):
     username = message.text.strip().lstrip("@")
     try:
         chat = await bot.get_chat(f"@{username}")
-        # Проверка пользователя
         member = await bot.get_chat_member(chat.id, message.from_user.id)
         if member.status not in ['creator', 'administrator']:
             await message.answer("❌ Вы не администратор этого канала.")
             return
-        # Проверка бота
         bot_member = await bot.get_chat_member(chat.id, bot.id)
         if bot_member.status != 'administrator':
             await message.answer("❌ Бот не администратор канала. Добавьте бота и дайте права.")
@@ -82,8 +80,6 @@ async def add_channel_by_forward(message: Message, bot: Bot):
     except Exception as e:
         await message.answer(f"❌ Ошибка: {e}")
 
-
-
 # --- Создание проекта ---
 @router.callback_query(F.data == "create_project")
 async def create_project(callback: CallbackQuery, state: FSMContext):
@@ -96,7 +92,8 @@ async def create_project(callback: CallbackQuery, state: FSMContext):
 # === КЛАССИЧЕСКИЙ РОЗЫГРЫШ ===
 @router.callback_query(F.data == "type_classic")
 async def classic_start(callback: CallbackQuery, state: FSMContext):
-    if not await require_admin(callback.from_user.id): return
+    if not await require_admin(callback.from_user.id):
+        return
     await state.set_state(ClassicCreation.channel)
     channels = await get_admin_channels(callback.from_user.id)
     if not channels:
@@ -203,52 +200,60 @@ async def classic_sponsors(message: Message, state: FSMContext, bot: Bot):
     )
     await message.answer(preview, reply_markup=confirm_keyboard())
 
-@router.callback_query(StateFilter(SlotsCreation.confirm), F.data == "publish")
-async def slots_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
+@router.callback_query(StateFilter(ClassicCreation.confirm), F.data == "publish")
+async def classic_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
     data = await state.get_data()
-    me = await bot.get_me()
-    contest_id = await create_contest({...})
-    kb = slot_url_buttons(contest_id, data["slots_count"], {}, me.username)
-    # ... отправка поста
     contest_id = await create_contest({
-        "type": "slots",
+        "type": "classic",
         "text": data.get("text", ""),
         "photo_file_id": data.get("photo", ""),
         "channel_id": data["channel_id"],
         "created_by": callback.from_user.id,
-        "slots_count": data["slots_count"],
-        "winning_slot": data["winning_slot"],
-        "payment_required": data["payment_required"],
-        "slot_price": data["slot_price"],
+        "end_condition": data["end_condition"],
+        "end_value": data["end_value"],
+        "winners_count": data["winners_count"],
         "sponsor_channels": json.dumps(data["sponsors"]),
-        "title": (data.get("text") or "Лотерея")[:30]
+        "title": (data.get("text") or "Розыгрыш")[:30]
     })
-    occupied = {}
-    kb = slot_url_buttons(contest_id, data["slots_count"], occupied, bot_username)
+    deep_link = await create_start_link(bot, f"contest_{contest_id}", encode=True)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=data["button_text"], url=deep_link)]
+    ])
     post_text = generate_contest_post({
-        "type": "slots",
+        "type": "classic",
         "text": data.get("text", ""),
-        "slots_count": data["slots_count"],
-        "payment_required": data["payment_required"],
-        "slot_price": data["slot_price"]
+        "end_condition": data["end_condition"],
+        "end_value": data["end_value"],
+        "winners_count": data["winners_count"]
     })
     try:
-    if data.get("photo"):
-        msg = await bot.send_photo(chat_id=data["channel_id"], photo=data["photo"], caption=post_text, reply_markup=kb)
-    else:
-        msg = await bot.send_message(chat_id=data["channel_id"], text=post_text, reply_markup=kb)
-    await update_contest(contest_id, message_id=msg.message_id)
-    await state.clear()
-    await callback.message.edit_text("✅ Опубликовано!")
-except Exception as e:
-    error_text = f"❌ Ошибка: {e}"
-    print(error_text)
-    await callback.message.edit_text(error_text)
+        if data.get("photo"):
+            msg = await bot.send_photo(
+                chat_id=data["channel_id"],
+                photo=data["photo"],
+                caption=post_text,
+                reply_markup=kb
+            )
+        else:
+            msg = await bot.send_message(
+                chat_id=data["channel_id"],
+                text=post_text,
+                reply_markup=kb
+            )
+        await update_contest(contest_id, message_id=msg.message_id)
+        await state.clear()
+        await callback.message.edit_text("✅ Опубликовано!")
+    except Exception as e:
+        error_text = f"❌ Ошибка при публикации: {e}"
+        print(error_text)
+        await callback.message.edit_text(error_text)
+    await callback.answer()
 
 # === ЛОТЕРЕЯ ПО СЛОТАМ ===
 @router.callback_query(F.data == "type_slots")
 async def slots_start(callback: CallbackQuery, state: FSMContext):
-    if not await require_admin(callback.from_user.id): return
+    if not await require_admin(callback.from_user.id):
+        return
     await state.set_state(SlotsCreation.channel)
     channels = await get_admin_channels(callback.from_user.id)
     if not channels:
@@ -313,7 +318,7 @@ async def slots_payment(callback: CallbackQuery, state: FSMContext):
     else:
         await state.update_data(payment_required=1)
         await state.set_state(SlotsCreation.slot_price)
-        await callback.message.edit_text("Цена слота в рублях:")
+        await callback.message.edit_text("Цена слота в звёздах:")
 
 @router.message(StateFilter(SlotsCreation.slot_price))
 async def slots_price(message: Message, state: FSMContext):
@@ -321,7 +326,7 @@ async def slots_price(message: Message, state: FSMContext):
         await message.answer("Введите целое число > 0.")
         return
     stars = int(message.text)
-    await state.update_data(slot_price=stars)  # храним как число звёзд
+    await state.update_data(slot_price=stars)
     await state.set_state(SlotsCreation.sponsors)
     await message.answer("Введите @username спонсоров через пробел (или 0):")
 
@@ -347,31 +352,30 @@ async def slots_sponsors(message: Message, state: FSMContext, bot: Bot):
     )
     await message.answer(preview, reply_markup=confirm_keyboard())
 
-@router.callback_query(StateFilter(ClassicCreation.confirm), F.data == "publish")
-async def classic_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
+@router.callback_query(StateFilter(SlotsCreation.confirm), F.data == "publish")
+async def slots_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
     data = await state.get_data()
+    me = await bot.get_me()
     contest_id = await create_contest({
-        "type": "classic",
+        "type": "slots",
         "text": data.get("text", ""),
         "photo_file_id": data.get("photo", ""),
         "channel_id": data["channel_id"],
         "created_by": callback.from_user.id,
-        "end_condition": data["end_condition"],
-        "end_value": data["end_value"],
-        "winners_count": data["winners_count"],
+        "slots_count": data["slots_count"],
+        "winning_slot": data["winning_slot"],
+        "payment_required": data["payment_required"],
+        "slot_price": data["slot_price"],
         "sponsor_channels": json.dumps(data["sponsors"]),
-        "title": (data.get("text") or "Розыгрыш")[:30]
+        "title": (data.get("text") or "Лотерея")[:30]
     })
-    deep_link = await create_start_link(bot, f"contest_{contest_id}", encode=True)
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=data["button_text"], url=deep_link)]
-    ])
+    kb = slot_url_buttons(contest_id, data["slots_count"], {}, me.username)
     post_text = generate_contest_post({
-        "type": "classic",
+        "type": "slots",
         "text": data.get("text", ""),
-        "end_condition": data["end_condition"],
-        "end_value": data["end_value"],
-        "winners_count": data["winners_count"]
+        "slots_count": data["slots_count"],
+        "payment_required": data["payment_required"],
+        "slot_price": data["slot_price"]
     })
     try:
         if data.get("photo"):
@@ -389,12 +393,13 @@ async def classic_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
             )
         await update_contest(contest_id, message_id=msg.message_id)
         await state.clear()
-        await callback.message.edit_text("✅ Опубликовано!")
+        await callback.message.edit_text("✅ Лотерея запущена!")
     except Exception as e:
         error_text = f"❌ Ошибка при публикации: {e}"
         print(error_text)
         await callback.message.edit_text(error_text)
     await callback.answer()
+
 # --- Мои проекты ---
 @router.callback_query(F.data == "my_projects")
 async def my_projects(callback: CallbackQuery):
@@ -440,7 +445,7 @@ async def finish_contest(callback: CallbackQuery, bot: Bot):
         await update_post_message(bot, contest, new_text=new_text)
         await update_contest(contest_id, status='finished', finished_at=datetime.now())
         await callback.message.edit_text("✅ Итоги подведены!")
-    else:  # slots
+    else:
         await update_contest(contest_id, status='finished', finished_at=datetime.now())
         await update_post_message(bot, contest, reply_markup=None)
         await callback.message.edit_text("✅ Лотерея завершена.")
@@ -453,7 +458,6 @@ async def delete_contest(callback: CallbackQuery, bot: Bot):
     if not contest or contest['created_by'] != callback.from_user.id:
         await callback.answer("Нет прав.")
         return
-    # Удаляем пост из канала, если возможно
     try:
         await bot.delete_message(contest['channel_id'], contest['message_id'])
     except:
