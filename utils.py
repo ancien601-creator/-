@@ -1,9 +1,8 @@
 from aiogram import Bot
-from aiogram.types import InlineKeyboardMarkup
 import json
 
 async def check_subscriptions(bot: Bot, user_id: int, channels: list[str]) -> bool:
-    """Проверяет подписку пользователя на все каналы. channels: ['@username', ...]"""
+    """Проверяет подписку на каналы (передаются с @)."""
     for channel in channels:
         try:
             chat = await bot.get_chat(channel)
@@ -45,8 +44,7 @@ def generate_contest_post(contest: dict) -> str:
     else:  # slots
         text += f"\n\n🎰 Слотов: {contest['slots_count']}"
         if contest['payment_required']:
-            price = contest['slot_price']  # звезды
-            text += f"\n💰 Стоимость слота: {price} ⭐"
+            text += f"\n💰 Стоимость слота: {contest['slot_price']} ⭐"
         else:
             text += "\n🆓 Участие бесплатное"
     return text
