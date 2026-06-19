@@ -11,17 +11,6 @@ def main_menu(is_admin: bool) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-def slot_url_buttons(contest_id: int, slots_count: int, occupied: dict[int, int], bot_username: str) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    for i in range(1, slots_count + 1):
-        if i in occupied:
-            builder.button(text=f"❌ {i}", callback_data="slot_occupied")
-        else:
-            url = f"https://t.me/{bot_username}?start=slot_{contest_id}_{i}"
-            builder.button(text=str(i), url=url)
-    builder.adjust(5)
-    return builder.as_markup()
-
 def project_type_choice() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🎁 Классический розыгрыш", callback_data="type_classic")
@@ -76,16 +65,17 @@ def project_actions(contest_id: int, contest_type: str) -> InlineKeyboardMarkup:
     builder.button(text="🔙 Назад", callback_data="my_projects")
     return builder.as_markup()
 
-def slot_buttons(contest_id: int, slots_count: int, occupied: dict[int, int]) -> InlineKeyboardMarkup:
+def slot_url_buttons(contest_id: int, slots_count: int, occupied: dict[int, int], bot_username: str) -> InlineKeyboardMarkup:
+    """
+    Свободные слоты – URL-кнопки, занятые – неактивные callback-кнопки.
+    """
     builder = InlineKeyboardBuilder()
     for i in range(1, slots_count + 1):
         if i in occupied:
-            text = f"❌ {i}"
-            callback = "slot_occupied"
+            builder.button(text=f"❌ {i}", callback_data="slot_occupied")
         else:
-            text = str(i)
-            callback = f"slot_{contest_id}_{i}"
-        builder.button(text=text, callback_data=callback)
+            url = f"https://t.me/{bot_username}?start=slot_{contest_id}_{i}"
+            builder.button(text=str(i), url=url)
     builder.adjust(5)
     return builder.as_markup()
 
