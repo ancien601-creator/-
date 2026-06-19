@@ -17,6 +17,7 @@ router = Router()
 @router.message(CommandStart(deep_link=True))
 async def deep_link_handler(message: Message, bot: Bot, command: CommandObject):
     args = command.args
+    ...
     if not args:
         return
     if args.startswith("contest_"):
