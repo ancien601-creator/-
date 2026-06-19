@@ -4,6 +4,11 @@ from config import DB_PATH
 class Database:
     @staticmethod
     async def init_db():
+        # НАДЁЖНОСТЬ: Получаем путь к папке и создаем её, если её нет
+        db_dir = os.path.dirname(DB_PATH)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+
         async with aiosqlite.connect(DB_PATH) as db:
             # Таблица конкурсов
             await db.execute("""
