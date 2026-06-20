@@ -24,7 +24,7 @@ async def show_main_menu(target, text: str = "👋 Главное меню:"):
 async def cmd_start(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
     # убери всю проверку args — participation.router обработает раньше
-    await show_main_menu(message, f"👋 Привет, {message.from_user.first_name}!"\n\nДобро пожаловать в бот розыгрышей и лотерей.")
+    await show_main_menu(message, f"👋 Привет, {message.from_user.first_name}!\n\nДобро пожаловать в бот розыгрышей и лотерей.")
 
 
 @router.callback_query(F.data == "back_to_menu")
