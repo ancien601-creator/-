@@ -25,11 +25,11 @@ async def main():
     dp.message.middleware(AdminMiddleware())
     dp.callback_query.middleware(AdminMiddleware())
 
+    dp.include_router(participation.router)  # ← ПЕРВЫМ
     dp.include_router(start.router)
     dp.include_router(classic.router)
     dp.include_router(slots.router)
     dp.include_router(my_projects.router)
-    dp.include_router(participation.router)
     dp.include_router(payments.router)
 
     logger.info("Bot started")
