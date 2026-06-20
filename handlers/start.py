@@ -19,13 +19,12 @@ async def show_main_menu(target, text: str = "👋 Главное меню:"):
         await target.message.edit_text(text, reply_markup=kb)
 
 
-@router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext, bot: Bot):
-    await state.clear()
+# handlers/start.py
+@router.message(CommandStart())  # ← ловит ВСЕ /start, включая deep link
+async def cmd_start(message: Message, ...):
     args = message.text.split(maxsplit=1)
     if len(args) > 1:
-        # Deep link handled by participation handler
-        return
+        return  # ← просто выходит, но participation.py может не успеть
     await show_main_menu(message, f"👋 Привет, {message.from_user.first_name}!\n\nДобро пожаловать в бот розыгрышей и лотерей.")
 
 
