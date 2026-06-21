@@ -16,9 +16,10 @@ class ClassicContest(StatesGroup):
 
 class SlotsContest(StatesGroup):
     select_channel = State()
+    ask_content = State()        # спросить: добавить текст/фото или нет
     enter_content = State()
-    enter_content_photo = State()
     enter_slots_count = State()
+    enter_max_attempts = State()
     select_payment_type = State()
     enter_slot_price = State()
     enter_sponsors = State()
