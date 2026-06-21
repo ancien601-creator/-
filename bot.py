@@ -8,7 +8,7 @@ from aiogram.enums import ParseMode
 
 from config import BOT_TOKEN
 from db.database import init_db
-from handlers import start, classic, slots, my_projects, participation, payments
+from handlers import participation, start, classic, slots, my_projects, payments
 from middlewares.admin import AdminMiddleware
 
 logging.basicConfig(level=logging.INFO)
@@ -25,7 +25,8 @@ async def main():
     dp.message.middleware(AdminMiddleware())
     dp.callback_query.middleware(AdminMiddleware())
 
-    dp.include_router(participation.router)  # ← ПЕРВЫМ
+    # participation ПЕРВЫМ — чтобы перехватить /start с deep link раньше start.py
+    dp.include_router(participation.router)
     dp.include_router(start.router)
     dp.include_router(classic.router)
     dp.include_router(slots.router)
