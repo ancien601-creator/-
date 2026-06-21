@@ -3,6 +3,7 @@ import random
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from keyboards import (
     main_menu_kb, channels_list_kb, payment_type_kb,
@@ -14,6 +15,16 @@ from utils.helpers import resolve_channel
 
 router = Router()
 
+
+def ask_content_kb():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📝 Добавить текст / фото", callback_data="content_yes")
+    builder.button(text="⏩ Без текста", callback_data="content_no")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+# ──────────────────────── ENTRY ────────────────────────
 
 @router.callback_query(F.data == "type_slots")
 async def start_slots(call: CallbackQuery, state: FSMContext):
@@ -30,7 +41,7 @@ async def start_slots(call: CallbackQuery, state: FSMContext):
     await state.set_state(SlotsContest.select_channel)
     await state.update_data(type="slots")
     await call.message.edit_text(
-        "📢 Шаг 1/7: Выберите канал для лотереи:",
+        "📢 Шаг 1/8: Выберите канал для лотереи:",
         reply_markup=channels_list_kb(channels)
     )
     await call.answer()
@@ -52,16 +63,38 @@ async def slots_select_channel(call: CallbackQuery, state: FSMContext):
         channel_title=ch.get("channel_title", ""),
         channel_username=ch.get("channel_username", "")
     )
-    await state.set_state(SlotsContest.enter_content)
+    await state.set_state(SlotsContest.ask_content)
     await call.message.edit_text(
         f"✅ Канал: <b>{ch.get('channel_title', channel_id)}</b>\n\n"
-        "📝 Шаг 2/7: Введите текст поста лотереи.\n\n"
-        "Можно прикрепить фото к тексту в одном сообщении."
+        "📝 Шаг 2/8: Добавить текст или фото к посту?",
+        reply_markup=ask_content_kb()
     )
     await call.answer()
 
 
-# ──────────────────────── STEP 2: CONTENT ────────────────────────
+# ──────────────────────── STEP 2: ASK CONTENT ────────────────────────
+
+@router.callback_query(SlotsContest.ask_content, F.data == "content_no")
+async def slots_skip_content(call: CallbackQuery, state: FSMContext):
+    await state.update_data(text=None, photo_id=None, title="Лотерея по слотам")
+    await state.set_state(SlotsContest.enter_slots_count)
+    await call.message.edit_text(
+        "🎰 Шаг 3/8: Введите количество слотов:\n\n"
+        "Например: <code>10</code>, <code>20</code>, <code>50</code>"
+    )
+    await call.answer()
+
+
+@router.callback_query(SlotsContest.ask_content, F.data == "content_yes")
+async def slots_ask_content_yes(call: CallbackQuery, state: FSMContext):
+    await state.set_state(SlotsContest.enter_content)
+    await call.message.edit_text(
+        "📝 Введите текст поста. Можно прикрепить фото в одном сообщении."
+    )
+    await call.answer()
+
+
+# ──────────────────────── STEP 2b: CONTENT ────────────────────────
 
 @router.message(SlotsContest.enter_content)
 async def slots_enter_content(message: Message, state: FSMContext):
@@ -77,7 +110,7 @@ async def slots_enter_content(message: Message, state: FSMContext):
     await state.update_data(text=text, photo_id=photo_id, title=title)
     await state.set_state(SlotsContest.enter_slots_count)
     await message.answer(
-        "🎰 Шаг 3/7: Введите количество слотов в лотерее:\n\n"
+        "🎰 Шаг 3/8: Введите количество слотов:\n\n"
         "Например: <code>10</code>, <code>20</code>, <code>50</code>"
     )
 
@@ -95,24 +128,45 @@ async def slots_enter_count(message: Message, state: FSMContext):
     winning_slot = random.randint(1, total)
     await state.update_data(total_slots=total, winning_slot=winning_slot)
 
+    await state.set_state(SlotsContest.enter_max_attempts)
+    await message.answer(
+        f"✅ Слотов: <b>{total}</b> | 🔐 Выигрышный слот тайно выбран.\n\n"
+        "🎯 Шаг 4/8: Сколько слотов может взять один участник?\n\n"
+        "Введите число (например: <code>1</code> — один слот на человека, "
+        "<code>3</code> — до трёх слотов)"
+    )
+
+
+# ──────────────────────── STEP 4: MAX ATTEMPTS ────────────────────────
+
+@router.message(SlotsContest.enter_max_attempts)
+async def slots_enter_max_attempts(message: Message, state: FSMContext):
+    val = message.text.strip()
+    data = await state.get_data()
+    total = data.get("total_slots", 200)
+
+    if not val.isdigit() or int(val) < 1 or int(val) > total:
+        await message.answer(f"❌ Введите число от 1 до {total}.")
+        return
+
+    await state.update_data(max_attempts=int(val))
     await state.set_state(SlotsContest.select_payment_type)
     await message.answer(
-        f"✅ Слотов: <b>{total}</b>\n"
-        f"🔐 Выигрышный слот тайно выбран и сохранён.\n\n"
-        "💰 Шаг 4/7: Выберите тип участия:",
+        f"✅ Максимум слотов на участника: <b>{val}</b>\n\n"
+        "💰 Шаг 5/8: Выберите тип участия:",
         reply_markup=payment_type_kb()
     )
 
 
-# ──────────────────────── STEP 4: PAYMENT TYPE ────────────────────────
+# ──────────────────────── STEP 5: PAYMENT TYPE ────────────────────────
 
 @router.callback_query(SlotsContest.select_payment_type, F.data == "pay_free")
 async def slots_pay_free(call: CallbackQuery, state: FSMContext):
     await state.update_data(payment_type="free", slot_price=0)
     await state.set_state(SlotsContest.enter_sponsors)
     await call.message.edit_text(
-        "📡 Шаг 5/7: Введите @username каналов-спонсоров (по одному или через запятую).\n\n"
-        "Или нажмите «Пропустить», если спонсоров нет.",
+        "📡 Шаг 6/8: Введите @username каналов-спонсоров (через запятую).\n\n"
+        "Или нажмите «Пропустить».",
         reply_markup=skip_kb()
     )
     await call.answer()
@@ -123,8 +177,8 @@ async def slots_pay_paid(call: CallbackQuery, state: FSMContext):
     await state.update_data(payment_type="paid")
     await state.set_state(SlotsContest.enter_slot_price)
     await call.message.edit_text(
-        "⭐ Введите цену за слот в Telegram Stars:\n\n"
-        "Пример: <code>50</code> (50 звёзд)"
+        "⭐ Введите цену за один слот в Telegram Stars:\n\n"
+        "Пример: <code>50</code>"
     )
     await call.answer()
 
@@ -133,18 +187,18 @@ async def slots_pay_paid(call: CallbackQuery, state: FSMContext):
 async def slots_enter_price(message: Message, state: FSMContext):
     val = message.text.strip()
     if not val.isdigit() or int(val) < 1:
-        await message.answer("❌ Введите положительное целое число (количество звёзд).")
+        await message.answer("❌ Введите положительное целое число.")
         return
     await state.update_data(slot_price=int(val), currency="XTR")
     await state.set_state(SlotsContest.enter_sponsors)
     await message.answer(
-        "📡 Шаг 6/7: Введите @username каналов-спонсоров (по одному или через запятую).\n\n"
-        "Или нажмите «Пропустить», если спонсоров нет.",
+        "📡 Шаг 6/8: Введите @username каналов-спонсоров (через запятую).\n\n"
+        "Или нажмите «Пропустить».",
         reply_markup=skip_kb()
     )
 
 
-# ──────────────────────── STEP 5: SPONSORS ────────────────────────
+# ──────────────────────── STEP 6: SPONSORS ────────────────────────
 
 @router.callback_query(SlotsContest.enter_sponsors, F.data == "skip")
 async def slots_skip_sponsors(call: CallbackQuery, state: FSMContext):
@@ -180,20 +234,23 @@ async def slots_enter_sponsors(message: Message, state: FSMContext, bot: Bot):
     await show_slots_preview(message, state)
 
 
-# ──────────────────────── STEP 6: CONFIRM & PUBLISH ────────────────────────
+# ──────────────────────── STEP 7: CONFIRM & PUBLISH ────────────────────────
 
 async def show_slots_preview(target, state: FSMContext):
     data = await state.get_data()
     pay_str = ("бесплатный" if data.get("payment_type") == "free"
                else f"платный — {data.get('slot_price')} ⭐ за слот")
     sponsors_str = ", ".join(f"@{s['username']}" for s in data.get("sponsors", [])) or "нет"
+    max_att = data.get("max_attempts", 1)
+    text_preview = data.get("text") or "<i>без текста</i>"
     preview = (
         f"📋 <b>Предпросмотр лотереи по слотам:</b>\n\n"
         f"📢 Канал: <b>{data.get('channel_title', data.get('channel_id'))}</b>\n"
         f"🎰 Слотов: <b>{data.get('total_slots')}</b>\n"
+        f"🎯 Попыток на участника: <b>{max_att}</b>\n"
         f"💰 Участие: {pay_str}\n"
         f"📡 Спонсоры: {sponsors_str}\n\n"
-        f"<b>Текст поста:</b>\n{data.get('text', '')}"
+        f"<b>Текст поста:</b>\n{text_preview}"
     )
     if isinstance(target, Message):
         await target.answer(preview, reply_markup=confirm_kb())
@@ -216,12 +273,13 @@ async def slots_publish(call: CallbackQuery, state: FSMContext, bot: Bot):
     contest_id = await create_contest({
         "admin_id": call.from_user.id,
         "type": "slots",
-        "title": data.get("title", ""),
-        "text": data.get("text", ""),
+        "title": data.get("title", "Лотерея по слотам"),
+        "text": data.get("text"),
         "photo_id": data.get("photo_id"),
         "channel_id": data["channel_id"],
         "channel_username": data.get("channel_username", ""),
         "total_slots": data["total_slots"],
+        "max_attempts": data.get("max_attempts", 1),
         "payment_type": data.get("payment_type", "free"),
         "slot_price": data.get("slot_price", 0),
         "currency": data.get("currency", "XTR"),
@@ -233,20 +291,27 @@ async def slots_publish(call: CallbackQuery, state: FSMContext, bot: Bot):
 
     me = await bot.get_me()
     kb = slots_grid_kb(me.username, contest_id, data["total_slots"], set())
-    post_text = data.get("text", "")
+    post_text = data.get("text") or ""
     channel_id = data["channel_id"]
 
     if data.get("photo_id"):
         msg = await bot.send_photo(
             chat_id=channel_id,
             photo=data["photo_id"],
-            caption=post_text,
+            caption=post_text or None,
             reply_markup=kb
         )
-    else:
+    elif post_text:
         msg = await bot.send_message(
             chat_id=channel_id,
             text=post_text,
+            reply_markup=kb
+        )
+    else:
+        # Только сетка кнопок без текста
+        msg = await bot.send_message(
+            chat_id=channel_id,
+            text="🎰 Лотерея по слотам",
             reply_markup=kb
         )
 
