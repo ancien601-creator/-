@@ -1,9 +1,9 @@
-import random
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery, InputMediaPhoto
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from keyboards import (
     main_menu_kb, contest_type_kb, channels_list_kb,
@@ -11,19 +11,32 @@ from keyboards import (
 )
 from db.database import get_admin_channels, create_contest, set_contest_message_id, add_sponsor
 from utils.states import ClassicContest
-from utils.helpers import check_bot_admin, resolve_channel
+from utils.helpers import resolve_channel
 
 router = Router()
+
+
+def show_count_kb():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Да, показывать счётчик", callback_data="show_count:yes")
+    builder.button(text="❌ Нет", callback_data="show_count:no")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def ask_content_kb():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📝 Добавить текст / фото", callback_data="classic_content_yes")
+    builder.button(text="⏩ Без текста", callback_data="classic_content_no")
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 # ──────────────────────── ENTRY ────────────────────────
 
 @router.callback_query(F.data == "create_project")
 async def create_project(call: CallbackQuery):
-    await call.message.edit_text(
-        "🎪 Выберите тип проекта:",
-        reply_markup=contest_type_kb()
-    )
+    await call.message.edit_text("🎪 Выберите тип проекта:", reply_markup=contest_type_kb())
     await call.answer()
 
 
@@ -32,8 +45,7 @@ async def start_classic(call: CallbackQuery, state: FSMContext):
     channels = await get_admin_channels(call.from_user.id)
     if not channels:
         await call.message.edit_text(
-            "📡 У вас нет добавленных каналов.\n\n"
-            "Сначала добавьте канал через «Мои каналы».",
+            "📡 У вас нет добавленных каналов.\n\nДобавьте канал через «Мои каналы».",
             reply_markup=main_menu_kb()
         )
         await call.answer()
@@ -42,7 +54,7 @@ async def start_classic(call: CallbackQuery, state: FSMContext):
     await state.set_state(ClassicContest.select_channel)
     await state.update_data(type="classic")
     await call.message.edit_text(
-        "📢 Шаг 1/7: Выберите канал для розыгрыша:",
+        "📢 Шаг 1/8: Выберите канал для розыгрыша:",
         reply_markup=channels_list_kb(channels)
     )
     await call.answer()
@@ -67,29 +79,47 @@ async def classic_select_channel(call: CallbackQuery, state: FSMContext):
     await state.set_state(ClassicContest.enter_content)
     await call.message.edit_text(
         f"✅ Канал: <b>{ch.get('channel_title', channel_id)}</b>\n\n"
-        "📝 Шаг 2/7: Введите текст поста для розыгрыша.\n\n"
-        "Можно прикрепить фото к тексту в одном сообщении."
+        "📝 Шаг 2/8: Добавить текст или фото к посту?",
+        reply_markup=ask_content_kb()
     )
     await call.answer()
 
 
 # ──────────────────────── STEP 2: CONTENT ────────────────────────
 
+@router.callback_query(ClassicContest.enter_content, F.data == "classic_content_no")
+async def classic_skip_content(call: CallbackQuery, state: FSMContext):
+    await state.update_data(text=None, photo_id=None, title="Розыгрыш")
+    await state.set_state(ClassicContest.select_finish_condition)
+    await call.message.edit_text(
+        "⏱ Шаг 3/8: Выберите условие завершения розыгрыша:",
+        reply_markup=finish_condition_kb()
+    )
+    await call.answer()
+
+
+@router.callback_query(ClassicContest.enter_content, F.data == "classic_content_yes")
+async def classic_ask_content(call: CallbackQuery, state: FSMContext):
+    await state.update_data(_waiting_content=True)
+    await call.message.edit_text(
+        "📝 Введите текст поста. Можно прикрепить фото в одном сообщении."
+    )
+    await call.answer()
+
+
 @router.message(ClassicContest.enter_content)
 async def classic_enter_content(message: Message, state: FSMContext):
     text = message.caption or message.text or ""
-    photo_id = None
-    if message.photo:
-        photo_id = message.photo[-1].file_id
+    photo_id = message.photo[-1].file_id if message.photo else None
     if not text and not photo_id:
-        await message.answer("❌ Пожалуйста, введите текст или прикрепите фото.")
+        await message.answer("❌ Введите текст или прикрепите фото.")
         return
 
     title = (text[:50] + "...") if len(text) > 50 else text
     await state.update_data(text=text, photo_id=photo_id, title=title)
     await state.set_state(ClassicContest.select_finish_condition)
     await message.answer(
-        "⏱ Шаг 3/7: Выберите условие завершения розыгрыша:",
+        "⏱ Шаг 3/8: Выберите условие завершения розыгрыша:",
         reply_markup=finish_condition_kb()
     )
 
@@ -101,9 +131,8 @@ async def classic_finish_time(call: CallbackQuery, state: FSMContext):
     await state.update_data(finish_condition="time")
     await state.set_state(ClassicContest.enter_finish_value)
     await call.message.edit_text(
-        "⏰ Введите дату и время окончания в формате:\n"
-        "<code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n\n"
-        "Пример: <code>31.12.2025 23:59</code>"
+        "⏰ Введите дату и время окончания:\n"
+        "<code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n\nПример: <code>31.12.2025 23:59</code>"
     )
     await call.answer()
 
@@ -113,8 +142,7 @@ async def classic_finish_count(call: CallbackQuery, state: FSMContext):
     await state.update_data(finish_condition="count")
     await state.set_state(ClassicContest.enter_finish_value)
     await call.message.edit_text(
-        "👥 Введите количество участников для завершения:\n\n"
-        "Пример: <code>100</code>"
+        "👥 Введите количество участников для завершения:\n\nПример: <code>100</code>"
     )
     await call.answer()
 
@@ -123,7 +151,6 @@ async def classic_finish_count(call: CallbackQuery, state: FSMContext):
 async def classic_enter_finish_value(message: Message, state: FSMContext):
     data = await state.get_data()
     value = message.text.strip()
-
     if data["finish_condition"] == "time":
         try:
             datetime.strptime(value, "%d.%m.%Y %H:%M")
@@ -137,10 +164,7 @@ async def classic_enter_finish_value(message: Message, state: FSMContext):
 
     await state.update_data(finish_value=value)
     await state.set_state(ClassicContest.enter_winners_count)
-    await message.answer(
-        "🏆 Шаг 4/7: Сколько победителей выбрать?\n\n"
-        "Введите число (например: <code>1</code>, <code>3</code>, <code>5</code>)"
-    )
+    await message.answer("🏆 Шаг 4/8: Сколько победителей?\n\nПример: <code>1</code>, <code>3</code>")
 
 
 # ──────────────────────── STEP 4: WINNERS COUNT ────────────────────────
@@ -155,7 +179,7 @@ async def classic_enter_winners(message: Message, state: FSMContext):
     await state.update_data(winners_count=int(val))
     await state.set_state(ClassicContest.select_button_text)
     await message.answer(
-        "🔘 Шаг 5/7: Выберите текст кнопки участия:",
+        "🔘 Шаг 5/8: Выберите текст кнопки участия:",
         reply_markup=button_text_kb()
     )
 
@@ -172,12 +196,7 @@ async def classic_select_button(call: CallbackQuery, state: FSMContext):
         return
 
     await state.update_data(button_text=choice)
-    await state.set_state(ClassicContest.enter_sponsors)
-    await call.message.edit_text(
-        "📡 Шаг 6/7: Введите @username каналов-спонсоров (по одному или через запятую).\n\n"
-        "Или нажмите «Пропустить», если спонсоров нет.",
-        reply_markup=skip_kb()
-    )
+    await _ask_show_count(call.message, state)
     await call.answer()
 
 
@@ -188,15 +207,42 @@ async def classic_custom_button(message: Message, state: FSMContext):
         await message.answer("❌ Текст не может быть пустым.")
         return
     await state.update_data(button_text=text)
+    await _ask_show_count(message, state)
+
+
+async def _ask_show_count(target, state: FSMContext):
+    await state.set_state(ClassicContest.enter_sponsors)  # временно, переопределим
+    # Используем отдельный под-шаг через inline
+    if isinstance(target, Message):
+        await target.answer(
+            "👁 Шаг 6/8: Показывать количество участников на кнопке?\n\n"
+            "Например: «Участвовать (42)»",
+            reply_markup=show_count_kb()
+        )
+    else:
+        await target.edit_text(
+            "👁 Шаг 6/8: Показывать количество участников на кнопке?\n\n"
+            "Например: «Участвовать (42)»",
+            reply_markup=show_count_kb()
+        )
+
+
+# ──────────────────────── STEP 6: SHOW COUNT ────────────────────────
+
+@router.callback_query(F.data.startswith("show_count:"))
+async def classic_show_count(call: CallbackQuery, state: FSMContext):
+    show = call.data.split(":")[1] == "yes"
+    await state.update_data(show_count=show)
     await state.set_state(ClassicContest.enter_sponsors)
-    await message.answer(
-        "📡 Шаг 6/7: Введите @username каналов-спонсоров (по одному или через запятую).\n\n"
-        "Или нажмите «Пропустить», если спонсоров нет.",
+    await call.message.edit_text(
+        "📡 Шаг 7/8: Введите @username каналов-спонсоров (через запятую).\n\n"
+        "Или нажмите «Пропустить».",
         reply_markup=skip_kb()
     )
+    await call.answer()
 
 
-# ──────────────────────── STEP 6: SPONSORS ────────────────────────
+# ──────────────────────── STEP 7: SPONSORS ────────────────────────
 
 @router.callback_query(ClassicContest.enter_sponsors, F.data == "skip")
 async def classic_skip_sponsors(call: CallbackQuery, state: FSMContext):
@@ -210,8 +256,7 @@ async def classic_skip_sponsors(call: CallbackQuery, state: FSMContext):
 async def classic_enter_sponsors(message: Message, state: FSMContext, bot: Bot):
     raw = message.text.strip()
     usernames = [u.strip().lstrip("@") for u in raw.replace(",", " ").split() if u.strip()]
-    valid = []
-    invalid = []
+    valid, invalid = [], []
     for u in usernames:
         info = await resolve_channel(bot, f"@{u}")
         if info:
@@ -221,8 +266,8 @@ async def classic_enter_sponsors(message: Message, state: FSMContext, bot: Bot):
 
     if invalid:
         await message.answer(
-            f"⚠️ Не удалось найти каналы: {', '.join('@' + u for u in invalid)}\n"
-            "Проверьте правильность username и попробуйте снова, или пропустите шаг.",
+            f"⚠️ Не удалось найти: {', '.join('@' + u for u in invalid)}\n"
+            "Проверьте username или пропустите шаг.",
             reply_markup=skip_kb()
         )
         return
@@ -232,21 +277,24 @@ async def classic_enter_sponsors(message: Message, state: FSMContext, bot: Bot):
     await show_classic_preview(message, state)
 
 
-# ──────────────────────── STEP 7: CONFIRM & PUBLISH ────────────────────────
+# ──────────────────────── STEP 8: CONFIRM & PUBLISH ────────────────────────
 
 async def show_classic_preview(target, state: FSMContext):
     data = await state.get_data()
     cond = data.get("finish_condition")
     cond_str = f"⏰ {data.get('finish_value')}" if cond == "time" else f"👥 {data.get('finish_value')} участников"
     sponsors_str = ", ".join(f"@{s['username']}" for s in data.get("sponsors", [])) or "нет"
+    show_count_str = "да" if data.get("show_count") else "нет"
+    text_preview = data.get("text") or "<i>без текста</i>"
     preview = (
         f"📋 <b>Предпросмотр розыгрыша:</b>\n\n"
         f"📢 Канал: <b>{data.get('channel_title', data.get('channel_id'))}</b>\n"
         f"⏱ Условие: {cond_str}\n"
         f"🏆 Победителей: {data.get('winners_count', 1)}\n"
         f"🔘 Кнопка: <b>{data.get('button_text', 'Участвовать')}</b>\n"
+        f"👁 Счётчик участников: {show_count_str}\n"
         f"📡 Спонсоры: {sponsors_str}\n\n"
-        f"<b>Текст поста:</b>\n{data.get('text', '')}"
+        f"<b>Текст поста:</b>\n{text_preview}"
     )
     if isinstance(target, Message):
         await target.answer(preview, reply_markup=confirm_kb())
@@ -269,8 +317,8 @@ async def classic_publish(call: CallbackQuery, state: FSMContext, bot: Bot):
     contest_id = await create_contest({
         "admin_id": call.from_user.id,
         "type": "classic",
-        "title": data.get("title", ""),
-        "text": data.get("text", ""),
+        "title": data.get("title", "Розыгрыш"),
+        "text": data.get("text"),
         "photo_id": data.get("photo_id"),
         "channel_id": data["channel_id"],
         "channel_username": data.get("channel_username", ""),
@@ -278,35 +326,37 @@ async def classic_publish(call: CallbackQuery, state: FSMContext, bot: Bot):
         "finish_value": data.get("finish_value"),
         "winners_count": data.get("winners_count", 1),
         "button_text": data.get("button_text", "Участвовать"),
+        "show_count": 1 if data.get("show_count") else 0,
     })
 
     for sp in data.get("sponsors", []):
         await add_sponsor(contest_id, sp["username"], sp.get("id"))
 
     me = await bot.get_me()
-    kb = participate_kb(me.username, contest_id, data.get("button_text", "Участвовать"))
-    post_text = data.get("text", "")
+    btn_text = data.get("button_text", "Участвовать")
+    if data.get("show_count"):
+        btn_text = f"{btn_text} (0)"
+    kb = participate_kb(me.username, contest_id, btn_text)
 
     channel_id = data["channel_id"]
+    post_text = data.get("text") or ""
+
     if data.get("photo_id"):
         msg = await bot.send_photo(
             chat_id=channel_id,
             photo=data["photo_id"],
-            caption=post_text,
+            caption=post_text or None,
             reply_markup=kb
         )
+    elif post_text:
+        msg = await bot.send_message(chat_id=channel_id, text=post_text, reply_markup=kb)
     else:
-        msg = await bot.send_message(
-            chat_id=channel_id,
-            text=post_text,
-            reply_markup=kb
-        )
+        msg = await bot.send_message(chat_id=channel_id, text="🎯 Розыгрыш", reply_markup=kb)
 
     await set_contest_message_id(contest_id, msg.message_id)
 
     await call.message.edit_text(
-        f"🎉 Розыгрыш <b>#{contest_id}</b> опубликован в канале!\n\n"
-        f"Управление через «Мои проекты».",
+        f"🎉 Розыгрыш <b>#{contest_id}</b> опубликован!\n\nУправление через «Мои проекты».",
         reply_markup=main_menu_kb()
     )
     await call.answer("Опубликовано!")
