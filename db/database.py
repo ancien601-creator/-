@@ -45,10 +45,12 @@ async def init_db():
 
                 -- Slots fields
                 total_slots INTEGER,
+                max_attempts INTEGER DEFAULT 1,
                 payment_type TEXT CHECK(payment_type IN ('free', 'paid')),
                 slot_price REAL,
                 currency TEXT DEFAULT 'XTR',
-                winning_slot INTEGER
+                winning_slot INTEGER,
+                show_count INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS contest_sponsors (
@@ -84,6 +86,16 @@ async def init_db():
                 FOREIGN KEY(contest_id) REFERENCES contests(id)
             );
         """)
+        # Migrate: add max_attempts if missing (for existing DBs)
+        try:
+            await db.execute("ALTER TABLE contests ADD COLUMN max_attempts INTEGER DEFAULT 1")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE contests ADD COLUMN show_count INTEGER DEFAULT 0")
+            await db.commit()
+        except Exception:
+            pass
         await db.commit()
 
 
@@ -135,8 +147,8 @@ async def create_contest(data: dict) -> int:
             """INSERT INTO contests
                (admin_id, type, title, text, photo_id, channel_id, channel_username,
                 finish_condition, finish_value, winners_count, button_text,
-                total_slots, payment_type, slot_price, currency, winning_slot)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                total_slots, max_attempts, payment_type, slot_price, currency, winning_slot, show_count)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data.get("admin_id"),
                 data.get("type"),
@@ -150,10 +162,12 @@ async def create_contest(data: dict) -> int:
                 data.get("winners_count"),
                 data.get("button_text", "Участвовать"),
                 data.get("total_slots"),
+                data.get("max_attempts", 1),
                 data.get("payment_type"),
                 data.get("slot_price"),
                 data.get("currency", "XTR"),
                 data.get("winning_slot"),
+                data.get("show_count", 0),
             )
         )
         await db.commit()
@@ -228,7 +242,6 @@ async def get_sponsors(contest_id: int) -> list[dict]:
 # ──────────────────────── PARTICIPANTS ────────────────────────
 
 async def add_participant(contest_id: int, user_id: int, username: str, full_name: str) -> bool:
-    """Returns True if newly added, False if already exists."""
     async with aiosqlite.connect(DB_PATH) as db:
         try:
             await db.execute(
@@ -294,6 +307,17 @@ async def get_all_slots(contest_id: int) -> list[dict]:
             return [dict(r) for r in rows]
 
 
+async def count_user_slots(contest_id: int, user_id: int) -> int:
+    """Count how many slots this user has booked in this contest."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT COUNT(*) FROM slots WHERE contest_id = ? AND user_id = ?",
+            (contest_id, user_id)
+        ) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else 0
+
+
 async def book_slot(contest_id: int, slot_number: int, user_id: int,
                     username: str, full_name: str, payment_status: str = "free") -> bool:
     """Returns True if successfully booked, False if already taken."""
@@ -318,7 +342,6 @@ async def book_slot(contest_id: int, slot_number: int, user_id: int,
             (contest_id, slot_number, user_id, username, full_name, payment_status)
         )
         await db.commit()
-        # Re-check
         async with db.execute(
             "SELECT user_id FROM slots WHERE contest_id = ? AND slot_number = ?",
             (contest_id, slot_number)
