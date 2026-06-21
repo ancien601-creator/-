@@ -1,5 +1,3 @@
-import random
-
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -7,8 +5,7 @@ from aiogram.fsm.context import FSMContext
 from keyboards import main_menu_kb, my_projects_kb, project_actions_kb
 from db.database import (
     get_admin_contests, get_contest, get_participants,
-    finish_contest, count_participants, get_booked_slots_count,
-    get_all_slots
+    finish_contest, count_participants, get_booked_slots_count
 )
 from utils.helpers import pick_winners, format_user_mention
 
@@ -27,10 +24,7 @@ async def my_projects(call: CallbackQuery, state: FSMContext):
         await call.answer()
         return
 
-    await call.message.edit_text(
-        "📋 <b>Мои проекты:</b>",
-        reply_markup=my_projects_kb(contests)
-    )
+    await call.message.edit_text("📋 <b>Мои проекты:</b>", reply_markup=my_projects_kb(contests))
     await call.answer()
 
 
@@ -49,19 +43,22 @@ async def project_detail(call: CallbackQuery):
 
     if contest["type"] == "classic":
         count = await count_participants(contest_id)
-        extra = f"\n👥 Участников: <b>{count}</b>"
         cond = contest.get("finish_condition")
+        extra = f"\n👥 Участников: <b>{count}</b>"
         if cond == "time":
             extra += f"\n⏰ Завершение: {contest.get('finish_value')}"
         elif cond == "count":
-            extra += f"\n👥 Лимит участников: {contest.get('finish_value')}"
+            extra += f"\n🎯 Лимит: {contest.get('finish_value')}"
         extra += f"\n🏆 Победителей: {contest.get('winners_count', 1)}"
+        extra += f"\n👁 Счётчик на кнопке: {'да' if contest.get('show_count') else 'нет'}"
     else:
         booked = await get_booked_slots_count(contest_id)
         total = contest.get("total_slots", 0)
         pay = "бесплатные" if contest.get("payment_type") == "free" else f"{contest.get('slot_price')} ⭐"
+        max_att = contest.get("max_attempts") or 1
         extra = (
             f"\n🎰 Слотов: <b>{booked}/{total}</b> занято"
+            f"\n🎯 Попыток на участника: <b>{max_att}</b>"
             f"\n💰 Участие: {pay}"
         )
 
@@ -75,7 +72,7 @@ async def project_detail(call: CallbackQuery):
     await call.answer()
 
 
-# ──────────────────────── DRAW WINNERS (CLASSIC) ────────────────────────
+# ──────────────────────── DRAW WINNERS ────────────────────────
 
 @router.callback_query(F.data.startswith("draw:"))
 async def draw_winners(call: CallbackQuery, bot: Bot):
@@ -90,50 +87,42 @@ async def draw_winners(call: CallbackQuery, bot: Bot):
 
     participants = await get_participants(contest_id)
     if not participants:
-        await call.answer("Нет участников для подведения итогов.", show_alert=True)
+        await call.answer("Нет участников.", show_alert=True)
         return
 
-    winners_count = contest.get("winners_count", 1)
-    winners = pick_winners(participants, winners_count)
-
+    winners = pick_winners(participants, contest.get("winners_count", 1))
     winners_text = "\n".join(
         f"{i+1}. {format_user_mention(w.get('username'), w.get('full_name', ''), w['user_id'])}"
         for i, w in enumerate(winners)
     )
 
-    result_text = (
-        f"\n\n🏆 <b>Итоги розыгрыша!</b>\n\n"
-        f"Победител{'и' if len(winners) > 1 else 'ь'}:\n{winners_text}\n\n"
-        f"Поздравляем! 🎉"
-    )
-
-    # Edit channel message
     channel_id = contest["channel_id"]
     message_id = contest.get("message_id")
+
+    # Убрать кнопку со старого поста
     if message_id:
         try:
-            if contest.get("photo_id"):
-                current_caption = contest.get("text", "") or ""
-                await bot.edit_message_caption(
-                    chat_id=channel_id,
-                    message_id=message_id,
-                    caption=current_caption + result_text,
-                    reply_markup=None
-                )
-            else:
-                current_text = contest.get("text", "") or ""
-                await bot.edit_message_text(
-                    chat_id=channel_id,
-                    message_id=message_id,
-                    text=current_text + result_text,
-                    reply_markup=None
-                )
-        except Exception as e:
-            pass  # Message may have been deleted
+            await bot.edit_message_reply_markup(
+                chat_id=channel_id,
+                message_id=message_id,
+                reply_markup=None
+            )
+        except Exception:
+            pass
+
+    # Новый пост с победителями
+    await bot.send_message(
+        chat_id=channel_id,
+        text=(
+            f"🏆 <b>Итоги розыгрыша #{contest_id}!</b>\n\n"
+            f"Победител{'и' if len(winners) > 1 else 'ь'}:\n{winners_text}\n\n"
+            f"Поздравляем! 🎉"
+        )
+    )
 
     await finish_contest(contest_id)
 
-    # Notify winners
+    # Уведомить победителей
     for w in winners:
         try:
             await bot.send_message(
@@ -148,10 +137,10 @@ async def draw_winners(call: CallbackQuery, bot: Bot):
         f"🏆 Итоги подведены!\n\nПобедители:\n{winners_text}",
         reply_markup=main_menu_kb()
     )
-    await call.answer("Итоги подведены!")
+    await call.answer("Готово!")
 
 
-# ──────────────────────── CLOSE CONTEST ────────────────────────
+# ──────────────────────── CLOSE ────────────────────────
 
 @router.callback_query(F.data.startswith("close:"))
 async def close_contest(call: CallbackQuery, bot: Bot):
@@ -163,7 +152,6 @@ async def close_contest(call: CallbackQuery, bot: Bot):
 
     await finish_contest(contest_id)
 
-    # Remove buttons from channel post
     channel_id = contest["channel_id"]
     message_id = contest.get("message_id")
     if message_id:
@@ -180,4 +168,4 @@ async def close_contest(call: CallbackQuery, bot: Bot):
         f"🔒 Проект <b>#{contest_id}</b> закрыт.",
         reply_markup=main_menu_kb()
     )
-    await call.answer("Проект закрыт")
+    await call.answer("Закрыто")
