@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
@@ -30,6 +30,19 @@ def ask_content_kb():
     builder.button(text="⏩ Без текста", callback_data="classic_content_no")
     builder.adjust(1)
     return builder.as_markup()
+
+
+def _time_examples() -> str:
+    """Генерирует примеры дат относительно текущего времени."""
+    now = datetime.now()
+    fmt = "%d.%m.%Y %H:%M"
+    return (
+        f"Примеры:\n"
+        f"<code>{(now + timedelta(minutes=10)).strftime(fmt)}</code> — через 10 минут\n"
+        f"<code>{(now + timedelta(hours=1)).strftime(fmt)}</code> — через час\n"
+        f"<code>{(now + timedelta(days=1)).strftime(fmt)}</code> — через день\n"
+        f"<code>{(now + timedelta(weeks=1)).strftime(fmt)}</code> — через неделю"
+    )
 
 
 # ──────────────────────── ENTRY ────────────────────────
@@ -100,7 +113,6 @@ async def classic_skip_content(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(ClassicContest.enter_content, F.data == "classic_content_yes")
 async def classic_ask_content(call: CallbackQuery, state: FSMContext):
-    await state.update_data(_waiting_content=True)
     await call.message.edit_text(
         "📝 Введите текст поста. Можно прикрепить фото в одном сообщении."
     )
@@ -131,8 +143,9 @@ async def classic_finish_time(call: CallbackQuery, state: FSMContext):
     await state.update_data(finish_condition="time")
     await state.set_state(ClassicContest.enter_finish_value)
     await call.message.edit_text(
-        "⏰ Введите дату и время окончания:\n"
-        "<code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n\nПример: <code>31.12.2025 23:59</code>"
+        f"⏰ Введите дату и время окончания в формате:\n"
+        f"<code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n\n"
+        f"{_time_examples()}"
     )
     await call.answer()
 
@@ -151,11 +164,22 @@ async def classic_finish_count(call: CallbackQuery, state: FSMContext):
 async def classic_enter_finish_value(message: Message, state: FSMContext):
     data = await state.get_data()
     value = message.text.strip()
+
     if data["finish_condition"] == "time":
         try:
-            datetime.strptime(value, "%d.%m.%Y %H:%M")
+            finish_dt = datetime.strptime(value, "%d.%m.%Y %H:%M")
         except ValueError:
-            await message.answer("❌ Неверный формат. Используйте: <code>ДД.ММ.ГГГГ ЧЧ:ММ</code>")
+            await message.answer(
+                f"❌ Неверный формат. Используйте: <code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n\n"
+                f"{_time_examples()}"
+            )
+            return
+
+        if finish_dt <= datetime.now():
+            await message.answer(
+                f"❌ Дата должна быть в будущем.\n\n"
+                f"{_time_examples()}"
+            )
             return
     else:
         if not value.isdigit() or int(value) < 1:
@@ -211,8 +235,7 @@ async def classic_custom_button(message: Message, state: FSMContext):
 
 
 async def _ask_show_count(target, state: FSMContext):
-    await state.set_state(ClassicContest.enter_sponsors)  # временно, переопределим
-    # Используем отдельный под-шаг через inline
+    await state.set_state(ClassicContest.enter_sponsors)
     if isinstance(target, Message):
         await target.answer(
             "👁 Шаг 6/8: Показывать количество участников на кнопке?\n\n"
@@ -354,6 +377,12 @@ async def classic_publish(call: CallbackQuery, state: FSMContext, bot: Bot):
         msg = await bot.send_message(chat_id=channel_id, text="🎯 Розыгрыш", reply_markup=kb)
 
     await set_contest_message_id(contest_id, msg.message_id)
+
+    # Запланировать автозавершение по времени
+    if data.get("finish_condition") == "time":
+        from utils.scheduler import schedule_contest
+        finish_dt = datetime.strptime(data["finish_value"], "%d.%m.%Y %H:%M")
+        schedule_contest(bot, contest_id, finish_dt)
 
     await call.message.edit_text(
         f"🎉 Розыгрыш <b>#{contest_id}</b> опубликован!\n\nУправление через «Мои проекты».",
