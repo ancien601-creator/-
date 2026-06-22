@@ -24,7 +24,7 @@ async def verify_subscriptions(bot: Bot, user_id: int, sponsors: list[dict]) -> 
     return missing
 
 
-# ──────────────────────── DEEP LINK ────────────────────────
+# ──────────────────────── /start ────────────────────────
 
 @router.message(CommandStart())
 async def handle_start(message: Message, command: CommandObject, bot: Bot):
@@ -40,20 +40,20 @@ async def handle_start(message: Message, command: CommandObject, bot: Bot):
 
     elif payload.startswith("slot_"):
         parts = payload.split("_")
-        if len(parts) < 3:
-            await message.answer("❌ Неверная ссылка.")
-            return
         try:
             contest_id = int(parts[1])
             slot_number = int(parts[2])
-        except ValueError:
+        except (ValueError, IndexError):
             await message.answer("❌ Неверная ссылка.")
             return
         await handle_slot_pick(message, bot, contest_id, slot_number)
 
     else:
-        from handlers.start import show_main_menu
-        await show_main_menu(message, f"👋 Привет, {message.from_user.first_name}!")
+        # Обычный /start — показать главное меню
+        await message.answer(
+            f"👋 Привет, {message.from_user.first_name}!\n\nДобро пожаловать в бот розыгрышей.",
+            reply_markup=main_menu_kb()
+        )
 
 
 # ──────────────────────── CLASSIC JOIN ────────────────────────
@@ -70,7 +70,6 @@ async def handle_classic_join(message: Message, bot: Bot, contest_id: int):
     user = message.from_user
     user_id = user.id
 
-    # Проверка подписки на основной канал
     in_main = await check_user_subscription(bot, user_id, contest["channel_id"])
     if not in_main:
         ch_username = contest.get("channel_username", "")
@@ -80,7 +79,6 @@ async def handle_classic_join(message: Message, bot: Bot, contest_id: int):
         )
         return
 
-    # Проверка спонсоров
     sponsors = await get_sponsors(contest_id)
     missing = await verify_subscriptions(bot, user_id, sponsors)
     if missing:
@@ -108,11 +106,9 @@ async def handle_classic_join(message: Message, bot: Bot, contest_id: int):
         f"Участников: <b>{count}</b>\nЖдите результатов! 🤞"
     )
 
-    # Обновить кнопку со счётчиком если включено
     if contest.get("show_count"):
         await _update_classic_button(bot, contest, count)
 
-    # Автофиниш по лимиту участников
     if contest.get("finish_condition") == "count":
         limit = int(contest.get("finish_value", 0))
         if limit and count >= limit:
@@ -120,7 +116,6 @@ async def handle_classic_join(message: Message, bot: Bot, contest_id: int):
 
 
 async def _update_classic_button(bot: Bot, contest: dict, count: int):
-    """Обновляет текст кнопки с актуальным счётчиком участников."""
     from keyboards import participate_kb
     me = await bot.get_me()
     btn_text = contest.get("button_text", "Участвовать")
@@ -166,25 +161,16 @@ async def auto_finish_classic(bot: Bot, contest: dict):
     try:
         await bot.send_message(
             chat_id=contest["admin_id"],
-            text=f"🏆 Розыгрыш <b>#{contest_id}</b> завершён автоматически!\n\n"
-                 f"Победители:\n{winners_text}"
+            text=f"🏆 Розыгрыш <b>#{contest_id}</b> завершён!\n\nПобедители:\n{winners_text}"
         )
     except Exception:
         pass
 
 
 async def _post_winner_message(bot: Bot, contest: dict, winners_text: str):
-    """Отправляет НОВЫЙ пост с победителями (не редактирует старый)."""
     channel_id = contest["channel_id"]
     message_id = contest.get("message_id")
 
-    result_text = (
-        f"🏆 <b>Итоги розыгрыша #{contest['id']}!</b>\n\n"
-        f"Победител{'и' if winners_text.count('\n') > 0 else 'ь'}:\n{winners_text}\n\n"
-        f"Поздравляем! 🎉"
-    )
-
-    # Убрать кнопку со старого поста
     if message_id:
         try:
             await bot.edit_message_reply_markup(
@@ -195,7 +181,11 @@ async def _post_winner_message(bot: Bot, contest: dict, winners_text: str):
         except Exception:
             pass
 
-    # Отправить новый пост с результатами
+    result_text = (
+        f"🏆 <b>Итоги розыгрыша #{contest['id']}!</b>\n\n"
+        f"Победител{'и' if '\n' in winners_text else 'ь'}:\n{winners_text}\n\n"
+        f"Поздравляем! 🎉"
+    )
     await bot.send_message(chat_id=channel_id, text=result_text)
 
 
@@ -218,24 +208,21 @@ async def handle_slot_pick(message: Message, bot: Bot, contest_id: int, slot_num
     user = message.from_user
     user_id = user.id
 
-    # Слот уже занят?
     existing = await get_slot(contest_id, slot_number)
     if existing and existing.get("user_id"):
         await message.answer(f"❌ Слот #{slot_number} уже занят. Выберите другой.")
         return
 
-    # Проверка лимита попыток
     max_attempts = contest.get("max_attempts") or 1
     user_booked = await count_user_slots(contest_id, user_id)
     if user_booked >= max_attempts:
-        slots_word = "слот" if max_attempts == 1 else "слота" if max_attempts < 5 else "слотов"
+        word = "слот" if max_attempts == 1 else ("слота" if max_attempts < 5 else "слотов")
         await message.answer(
             f"❌ Вы уже взяли максимальное количество слотов "
-            f"(<b>{max_attempts} {slots_word}</b>) в этой лотерее."
+            f"(<b>{max_attempts} {word}</b>) в этой лотерее."
         )
         return
 
-    # Подписка на основной канал
     in_main = await check_user_subscription(bot, user_id, contest["channel_id"])
     if not in_main:
         ch_username = contest.get("channel_username", "")
@@ -245,7 +232,6 @@ async def handle_slot_pick(message: Message, bot: Bot, contest_id: int, slot_num
         )
         return
 
-    # Спонсоры
     sponsors = await get_sponsors(contest_id)
     missing = await verify_subscriptions(bot, user_id, sponsors)
     if missing:
@@ -256,13 +242,10 @@ async def handle_slot_pick(message: Message, bot: Bot, contest_id: int, slot_num
         _pending[user_id] = f"slot_{contest_id}_{slot_number}"
         return
 
-    # Оплата
     if contest.get("payment_type") == "paid":
         price = int(contest.get("slot_price", 0))
         if price > 0:
-            await message.answer(
-                f"💳 Оплата слота #{slot_number}: <b>{price} ⭐</b>"
-            )
+            await message.answer(f"💳 Оплата слота #{slot_number}: <b>{price} ⭐</b>")
             await bot.send_invoice(
                 chat_id=user_id,
                 title=f"Слот #{slot_number}",
@@ -274,7 +257,6 @@ async def handle_slot_pick(message: Message, bot: Bot, contest_id: int, slot_num
             )
             return
 
-    # Бесплатный — бронируем сразу
     full_name = f"{user.first_name} {user.last_name or ''}".strip()
     booked = await book_slot(contest_id, slot_number, user_id, user.username, full_name, "free")
     if not booked:
@@ -291,7 +273,6 @@ async def process_slot_booked(bot: Bot, contest: dict, slot_number: int, user):
     username = getattr(user, "username", None)
     full_name = f"{user.first_name} {getattr(user, 'last_name', '') or ''}".strip()
 
-    # Обновить сетку слотов в канале
     all_slots = await get_all_slots(contest_id)
     booked_set = {s["slot_number"] for s in all_slots if s.get("user_id")}
     me = await bot.get_me()
@@ -328,7 +309,6 @@ async def process_slot_booked(bot: Bot, contest: dict, slot_number: int, user):
         except Exception:
             pass
 
-        # Убрать кнопки со старого поста
         if message_id:
             try:
                 await bot.edit_message_reply_markup(
@@ -339,7 +319,6 @@ async def process_slot_booked(bot: Bot, contest: dict, slot_number: int, user):
             except Exception:
                 pass
 
-        # Новый пост с результатом
         await bot.send_message(
             chat_id=channel_id,
             text=f"🏆 <b>Лотерея #{contest_id} завершена!</b>\n\n"
@@ -352,8 +331,7 @@ async def process_slot_booked(bot: Bot, contest: dict, slot_number: int, user):
     else:
         await bot.send_message(
             chat_id=user_id,
-            text=f"✅ Слот <b>#{slot_number}</b> забронирован!\n\n"
-                 f"Ожидайте окончания лотереи. Удачи! 🍀"
+            text=f"✅ Слот <b>#{slot_number}</b> забронирован!\n\nОжидайте окончания лотереи. Удачи! 🍀"
         )
 
 
