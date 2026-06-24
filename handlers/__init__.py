@@ -1,1 +1,1 @@
-from . import start, classic, slots, my_projects, participation, payments
+from . import start, classic, slots, lottery, battle, my_projects, participation, payments
